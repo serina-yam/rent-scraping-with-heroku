@@ -1,5 +1,4 @@
 import datetime
-from oauth2client.client import ACCOUNT_KEY_PATH
 from tenacity import retry
 import requests
 from bs4 import BeautifulSoup
@@ -22,7 +21,9 @@ LINE_API = os.environ["LINE_API"]
 # GOOGLE
 SPREADSHEET_KEY = os.environ["SPREADSHEET_KEY"]
 GDRIVE_FOLDER_PATH = os.environ["GDRIVE_FOLDER_PATH"]
+
 ACCOUNT_KEY_PATH = os.environ["ACCOUNT_KEY_PATH"]
+from oauth2client.client import ACCOUNT_KEY_PATH
 
 
 # file path
