@@ -8,6 +8,9 @@ import csv
 import os
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
+from dotenv import load_dotenv
+
+load_dotenv()
 
 """
 環境変数取得
@@ -29,27 +32,6 @@ CSV_FOLDER_PATH = os.environ["CSV_FOLDER_PATH"]
 SEARCH_URL = os.environ["SEARCH_URL"]
 SEARCH_WORD = os.environ["SEARCH_WORD"]
 FAVORITE_LIST = os.environ["FAVORITE_LIST"].split(',')
-
-
-
-
-def main():
-  print("****** START ******")
-
-  result = create_csv_file()
-
-  csv_file_name = result[0]
-  line_msg_favorite_list = result[1]
-
-  update_spreadsheet(csv_file_name)
-
-  Notify(line_msg_favorite_list)
-
-  print("****** DONE ******")
-
-
-# 実行
-main()
 
 
 """
@@ -234,3 +216,22 @@ def send_line_notify(notification_message):
     headers = {'Authorization': f'Bearer {line_notify_token}'}
     data = {'message': f'message: {notification_message}'}
     requests.post(line_notify_api, headers = headers, data = data)
+
+
+def main():
+  print("****** START ******")
+
+  result = create_csv_file()
+
+  csv_file_name = result[0]
+#   line_msg_favorite_list = result[1]
+
+  update_spreadsheet(csv_file_name)
+
+#   Notify(line_msg_favorite_list)
+
+  print("****** DONE ******")
+
+
+# 実行
+main()
