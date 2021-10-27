@@ -224,11 +224,11 @@ def main():
   result = create_csv_file()
 
   csv_file_name = result[0]
-#   line_msg_favorite_list = result[1]
+  line_msg_favorite_list = result[1]
 
   update_spreadsheet(csv_file_name)
 
-#   Notify(line_msg_favorite_list)
+  Notify(line_msg_favorite_list)
 
   print("****** DONE ******")
 
