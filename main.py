@@ -1,5 +1,5 @@
 import datetime
-from oauth2client.client import SERVICE_ACCOUNT
+from oauth2client.client import ACCOUNT_KEY_PATH
 from tenacity import retry
 import requests
 from bs4 import BeautifulSoup
