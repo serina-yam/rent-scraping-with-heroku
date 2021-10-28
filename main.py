@@ -1,4 +1,5 @@
 import datetime
+from dateutil.relativedelta import relativedelta
 from tenacity import retry
 import requests
 from bs4 import BeautifulSoup
@@ -7,6 +8,7 @@ import csv
 import os
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,15 +18,13 @@ load_dotenv()
 """
 # LINE
 LINE_TOKEN = os.environ["LINE_TOKEN"]
+LINE_TOKEN_TEST = os.environ["LINE_TOKEN_TEST"]
 LINE_API = os.environ["LINE_API"]
 
 # GOOGLE
 SPREADSHEET_KEY = os.environ["SPREADSHEET_KEY"]
 GDRIVE_FOLDER_PATH = os.environ["GDRIVE_FOLDER_PATH"]
-
 ACCOUNT_KEY_PATH = os.environ["ACCOUNT_KEY_PATH"]
-from oauth2client.client import ACCOUNT_KEY_PATH
-
 
 # file path
 CSV_FOLDER_PATH = os.environ["CSV_FOLDER_PATH"]
@@ -34,6 +34,12 @@ SEARCH_URL = os.environ["SEARCH_URL"]
 SEARCH_WORD = os.environ["SEARCH_WORD"]
 FAVORITE_LIST = os.environ["FAVORITE_LIST"].split(',')
 
+today = datetime.date.today()
+yesterday = today + relativedelta(days=-1)
+today = str(today)
+today = (today.replace('-',''))
+yesterday = str(yesterday)
+yesterday = (yesterday.replace('-',''))
 
 """
 サイトから取得したデータをCSVファイルに格納
@@ -45,9 +51,13 @@ def create_csv_file():
     result = scraping()
     all_data = result[0]
     line_msg_favorite_list = result[1]
+    notice_flg = result[2]
+
+    print('----------all_data----------')
     print(all_data)
+    print('----------------------------')
     file_name = convert_to_dataframe_and_csv(all_data)
-    return file_name, line_msg_favorite_list
+    return file_name, line_msg_favorite_list, notice_flg
 
 
 @retry()
@@ -130,14 +140,27 @@ def scraping():
                         if rent_name in FAVORITE_LIST:
                             line_msg_favorite_list.append(rent_name + "\n")
 
-                        return all_data, line_msg_favorite_list
+                        # 昨日作られたデータと比較
+                        file_name_prev = 'datalist' + yesterday + '.csv'
+                        df = pd.read_csv(CSV_FOLDER_PATH + file_name_prev, encoding='shift jis')
+
+                        if rent_name in df.columns:
+                            notice_flg = 1
+                        else:
+                            notice_flg = 0
+
+                        """
+                        テスト時は、
+                        notice_flg を 0 に指定するコードを
+                        以下に追加
+                        """
+
+                        print('notice_flg: ' + str(notice_flg))
+                        return all_data, line_msg_favorite_list, notice_flg
 
 
 # create file name
 def create_file_name():
-    today = datetime.date.today()
-    today = str(today)
-    today = (today.replace('-',''))
     file_name = 'datalist' + today + '.csv'
     return file_name
 
@@ -191,28 +214,41 @@ def update_spreadsheet(file_name):
 スプレッドシートが更新されたことをLINEに通知する
 """
 
-def Notify(line_msg_favorite_list):
+def Notify(notice_flg, line_msg_favorite_list):
     print("* send LINE start *")
     folder_path = GDRIVE_FOLDER_PATH
 
-    if line_msg_favorite_list:
-        favorite_list = '\n'.join(line_msg_favorite_list)
+    if notice_flg == 1:
+        if line_msg_favorite_list:
+            favorite_list = '\n'.join(line_msg_favorite_list)
 
-        send_line_msg ='\n 物件情報が更新されました!\n' + folder_path + '\n\nーー以下のお気に入り物件に空室がありますーー\n' + favorite_list
+            print('送信先：グループ')
+            send_line_msg ='\n 新着の物件情報があります!\n' + folder_path + '\n\nーー以下のお気に入り物件に空室がありますーー\n' + favorite_list
+        else:
+            print('送信先：グループ')
+            send_line_msg ='\n 新着の物件情報があります!\n' + folder_path
     else:
-        send_line_msg ='\n 物件情報が更新されました!\n' + folder_path
+        print('送信先：個人')
+        send_line_msg ='\n 本日の物件情報\n' + folder_path
 
-    send_line_notify(send_line_msg)
+    send_line_notify(notice_flg, send_line_msg)
+    print('----------notification_message----------')
     print(send_line_msg)
+    print('----------------------------------------')
+
     print("* send LINE done *")
 
 
 
-def send_line_notify(notification_message):
+def send_line_notify(notice_flg, notification_message):
     """
     LINEに通知する
     """
-    line_notify_token = LINE_TOKEN
+    if notice_flg == 1:
+        line_notify_token = LINE_TOKEN
+    else:
+        line_notify_token = LINE_TOKEN_TEST
+
     line_notify_api = LINE_API
     headers = {'Authorization': f'Bearer {line_notify_token}'}
     data = {'message': f'message: {notification_message}'}
@@ -226,10 +262,15 @@ def main():
 
   csv_file_name = result[0]
   line_msg_favorite_list = result[1]
+  notice_flg = result[2]
+
 
   update_spreadsheet(csv_file_name)
 
-  Notify(line_msg_favorite_list)
+  if notice_flg == 1:
+    Notify(notice_flg, line_msg_favorite_list)
+  else:
+    Notify(notice_flg, line_msg_favorite_list)
 
   print("****** DONE ******")
 
