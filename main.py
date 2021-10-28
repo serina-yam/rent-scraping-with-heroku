@@ -259,18 +259,13 @@ def main():
   print("****** START ******")
 
   result = create_csv_file()
-
   csv_file_name = result[0]
   line_msg_favorite_list = result[1]
   notice_flg = result[2]
 
-
   update_spreadsheet(csv_file_name)
 
-  if notice_flg == 1:
-    Notify(notice_flg, line_msg_favorite_list)
-  else:
-    Notify(notice_flg, line_msg_favorite_list)
+  Notify(notice_flg, line_msg_favorite_list)
 
   print("****** DONE ******")
 
