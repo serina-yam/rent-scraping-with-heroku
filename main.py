@@ -1,7 +1,6 @@
 import datetime
 from dateutil.relativedelta import relativedelta
 import numpy as np
-from numpy.lib.shape_base import apply_along_axis
 from tenacity import retry
 import requests
 from bs4 import BeautifulSoup
@@ -147,22 +146,26 @@ def scraping():
                             line_msg_favorite_list.append(rent_name + "\n")
 
                         # 昨日作られたデータと比較
-                        file_name_prev = 'datalist' + yesterday + '.csv'
-                        df = pd.read_csv(CSV_FOLDER_PATH + file_name_prev, encoding='shift jis')
-                        df = df[df['名称'].str.contains(rent_name, regex=False)]
+                        prev_file_name_path = CSV_FOLDER_PATH + 'datalist' + yesterday + '.csv'
+                        isExist = os.path.exists(prev_file_name_path)
+                        print(isExist)
+                        notice_flg = 0
+                        if isExist:
+                            df = pd.read_csv(prev_file_name_path, encoding='shift jis')
+                            df = df[df['名称'].str.contains(rent_name, regex=False)]
 
-                        # 昨日の物件名称と一致しない場合のみグループ通知
-                        records_count = df.shape[0]
-                        if records_count == 0:
-                            notice_flg = 1
-                        else:
-                            notice_flg = 0
+                            # 昨日の物件名称と一致しない場合のみグループ通知
+                            records_count = df.shape[0]
+                            if records_count == 0:
+                                notice_flg = 1
+                            else:
+                                notice_flg = 0
 
-                        """
-                        テスト時（１人のみのLINEへ通知）は、
-                        notice_flg を 0 に指定するコードを
-                        以下に追加
-                        """
+                            """
+                            テスト時（１人のみのLINEへ通知）は、
+                            notice_flg を 0 に指定するコードを
+                            以下に追加
+                            """
 
                         # print('notice_flg: ' + str(notice_flg))
                         return all_data, line_msg_favorite_list, notice_flg
