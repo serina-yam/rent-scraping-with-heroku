@@ -5,12 +5,11 @@ from tenacity import retry
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import csv
 import os
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
+from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from dotenv import load_dotenv
-
 
 """
 環境変数取得
@@ -25,9 +24,6 @@ LINE_API = os.environ["LINE_API"]
 SPREADSHEET_KEY = os.environ["SPREADSHEET_KEY"]
 GDRIVE_FOLDER_PATH = os.environ["GDRIVE_FOLDER_PATH"]
 ACCOUNT_KEY_PATH = os.environ["ACCOUNT_KEY_PATH"]
-
-# file path
-CSV_FOLDER_PATH = os.environ["CSV_FOLDER_PATH"]
 
 # 検索条件適用URL
 SEARCH_URL = os.environ["SEARCH_URL"]
@@ -67,10 +63,7 @@ def get_html(url):
     soup = BeautifulSoup(r.content, "html.parser")
     return soup
 
-
-
 def scraping():
-
     # 検索条件適用URL
     base_url =SEARCH_URL
 
@@ -135,94 +128,68 @@ def scraping():
                         data["敷金"] = tbody.findAll("td")[4].findAll("li")[0].getText().strip()
                         data["礼金"] = tbody.findAll("td")[4].findAll("li")[1].getText().strip()
 
-                        # drop
+                        # 除外する物件はデータに入れない
                         if not rent_name in DROP_LIST:
                             print("DROP_LIST:")
                             print(DROP_LIST)
                             all_data.append(data)
 
-                        # serch favorite
+                        # お気に入り物件はLINEにメッセージ
                         if rent_name in FAVORITE_LIST:
                             line_msg_favorite_list.append(rent_name + "\n")
 
-                        # 昨日作られたデータと比較
-                        prev_file_name_path = CSV_FOLDER_PATH + 'datalist' + yesterday + '.csv'
-                        isExist = os.path.exists(prev_file_name_path)
-                        print(isExist)
-                        notice_flg = 0
-                        if isExist:
-                            df = pd.read_csv(prev_file_name_path, encoding='shift jis')
-                            df = df[df['名称'].str.contains(rent_name, regex=False)]
+                        # 前回作られたデータ取得
+                        worksheet = open_spreadsheet()
+                        df = pd.DataFrame(worksheet.get_all_values())
 
-                            # 昨日の物件名称と一致しない場合のみグループ通知
-                            records_count = df.shape[0]
-                            if records_count == 0:
-                                notice_flg = 1
-                            else:
-                                notice_flg = 0
+                        # 昨日の物件名称と一致する場合は個人、しない場合はグループ通知
+                        exists = rent_name in df.values
+                        if exists:
+                            notice_flg = 0 #個人
+                        else:
+                            notice_flg = 1 #グループ
 
-                            """
-                            テスト時（１人のみのLINEへ通知）は、
-                            notice_flg を 0 に指定するコードを
-                            以下に追加
-                            """
-
-                        # print('notice_flg: ' + str(notice_flg))
+                        print('notice_flg: ' + str(notice_flg))
                         return all_data, line_msg_favorite_list, notice_flg
 
 
-# create file name
-def create_file_name():
-    file_name = 'datalist' + today + '.csv'
-    return file_name
-
-
-def convert_to_csv(all_data):
+def convert_to_dataframe(all_data):
 
     # convert to dataframe
     df = pd.DataFrame(all_data)
-    print("df.empty")
     df.drop_duplicates(subset=['名称','家賃'], inplace=True) #delete duplication
     df.index = np.arange(1, len(df)+1) #fix index from 1
 
-    # convert to csv
-    file_name =create_file_name()
-    print ("CSV file name:" + file_name)
-    df.to_csv(CSV_FOLDER_PATH + file_name, encoding='shift jis')
-
-    df['名称'] = df['名称'].str[:6] + '...'
-    rent_info_line_msg = df.loc[:, ['名称', '家賃', '管理費', '面積']]
-    rent_info_line_msg = str(rent_info_line_msg)
-
     print("* create csv file done *")
-    return file_name, rent_info_line_msg
+    return df
 
 
 """
-作成したCSVファイルな内容をスプレッドシートにアップする
+作成したCSVファイルの内容をスプレッドシートにアップする
 """
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
 
 #認証情報設定
 credentials = ServiceAccountCredentials.from_json_keyfile_name(ACCOUNT_KEY_PATH, scope)
-SPREADSHEET_KEY = SPREADSHEET_KEY
 
-def update_spreadsheet(file_name):
-    print("* update spreadshhet start *")
+def open_spreadsheet():
     #Google APIにログイン
     gc = gspread.authorize(credentials)
 
-    # CSVファイル読み込み
-    csv_file_name = CSV_FOLDER_PATH + file_name
-
     #共有設定したスプレッドシートのシート1を開く
     worksheet = gc.open_by_key(SPREADSHEET_KEY).sheet1
+    return worksheet
+
+def update_spreadsheet(df):
+    print("* update spreadshhet start *")
+
+    worksheet = open_spreadsheet()
 
     # スプレッドシートの中身を空にする
     worksheet.clear()
 
     # CSVを書き込み
-    worksheet.update(list(csv.reader(open(csv_file_name, encoding='shift jis'))))
+    set_with_dataframe(worksheet, df)
 
     print("* update spreadshhet done *")
 
@@ -292,12 +259,14 @@ def main():
     isEmpty = df.empty
 
     if not isEmpty:
-        #CSV変換
-        result2 = convert_to_csv(all_data)
-        file_name = result2[0]
-        rent_info_line_msg = result2[1]
+        #データ変換とスプレッドシートの内容をアップデート
+        df = convert_to_dataframe(all_data)
+        update_spreadsheet(df)
 
-        update_spreadsheet(file_name)
+        df['名称'] = df['名称'].str[:6] + '...'
+        rent_info_line_msg = df.loc[:, ['名称', '家賃', '管理費', '面積']]
+        rent_info_line_msg = str(rent_info_line_msg)
+
         Notify(notice_flg, rent_info_line_msg, line_msg_favorite_list)
     else:
         Notify(notice_flg=2, rent_info_line_msg="", line_msg_favorite_list="")
