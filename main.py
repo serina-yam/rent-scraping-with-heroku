@@ -245,10 +245,10 @@ def Notify(notice_flg, rent_info_line_msg, line_msg_favorite_list):
             send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path
     elif notice_flg == 2:
             print('送信先：個人（該当物件なし）')
-            send_line_msg ='\n 😞本日の該当物件はありません\n' + '\n \n🛋検索条件URL(九段下駅徒歩10分以内)：\n' + search_url
+            send_line_msg ='\n 😞本日の該当物件はありません\n' + '\n \n🛋検索条件URL：\n' + search_url
     else:
         print('送信先：個人')
-        send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path + '\n \n🛋検索条件URL(九段下駅徒歩10分以内)：\n' + search_url
+        send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path + '\n \n🛋検索条件URL：\n' + search_url
 
 
     send_line_notify(notice_flg, send_line_msg)
