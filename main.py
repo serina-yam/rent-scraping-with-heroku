@@ -96,7 +96,7 @@ def scraping():
             stations = item.findAll("div", {"class": "cassetteitem_detail-text"})
 
             address = item.find("li", {"class": "cassetteitem_detail-col1"}).getText().strip()
-            # アドレスに「千代田区九段」が含まれるデータのみ格納
+            # アドレスにSEARCH_WORDが含まれるデータのみ格納
             search_word = SEARCH_WORD
             if search_word in address:
                 # process each station
