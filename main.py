@@ -1,5 +1,7 @@
 import datetime
 from dateutil.relativedelta import relativedelta
+import numpy as np
+from numpy.lib.shape_base import apply_along_axis
 from tenacity import retry
 import requests
 from bs4 import BeautifulSoup
@@ -8,14 +10,13 @@ import csv
 import os
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
-
 from dotenv import load_dotenv
 
-load_dotenv()
 
 """
 環境変数取得
 """
+load_dotenv()
 # LINE
 LINE_TOKEN = os.environ["LINE_TOKEN"]
 LINE_TOKEN_TEST = os.environ["LINE_TOKEN_TEST"]
@@ -33,7 +34,9 @@ CSV_FOLDER_PATH = os.environ["CSV_FOLDER_PATH"]
 SEARCH_URL = os.environ["SEARCH_URL"]
 SEARCH_WORD = os.environ["SEARCH_WORD"]
 FAVORITE_LIST = os.environ["FAVORITE_LIST"].split(',')
+DROP_LIST = os.environ["DROP_LIST"].split(',')
 
+# 日付取得
 today = datetime.date.today()
 yesterday = today + relativedelta(days=-1)
 today = str(today)
@@ -46,7 +49,7 @@ yesterday = (yesterday.replace('-',''))
 """
 
 
-def create_csv_file():
+def create_data_list():
     print("* create csv file start *")
     result = scraping()
     all_data = result[0]
@@ -56,8 +59,7 @@ def create_csv_file():
     print('----------all_data----------')
     print(all_data)
     print('----------------------------')
-    file_name = convert_to_dataframe_and_csv(all_data)
-    return file_name, line_msg_favorite_list, notice_flg
+    return all_data, line_msg_favorite_list, notice_flg
 
 
 @retry()
@@ -134,7 +136,11 @@ def scraping():
                         data["敷金"] = tbody.findAll("td")[4].findAll("li")[0].getText().strip()
                         data["礼金"] = tbody.findAll("td")[4].findAll("li")[1].getText().strip()
 
-                        all_data.append(data)
+                        # drop
+                        if not rent_name in DROP_LIST:
+                            print("DROP_LIST:")
+                            print(DROP_LIST)
+                            all_data.append(data)
 
                         # serch favorite
                         if rent_name in FAVORITE_LIST:
@@ -143,19 +149,22 @@ def scraping():
                         # 昨日作られたデータと比較
                         file_name_prev = 'datalist' + yesterday + '.csv'
                         df = pd.read_csv(CSV_FOLDER_PATH + file_name_prev, encoding='shift jis')
+                        df = df[df['名称'].str.contains(rent_name, regex=False)]
 
-                        if rent_name in df.columns:
+                        # 昨日の物件名称と一致しない場合のみグループ通知
+                        records_count = df.shape[0]
+                        if records_count == 0:
                             notice_flg = 1
                         else:
                             notice_flg = 0
 
                         """
-                        テスト時は、
+                        テスト時（１人のみのLINEへ通知）は、
                         notice_flg を 0 に指定するコードを
                         以下に追加
                         """
 
-                        print('notice_flg: ' + str(notice_flg))
+                        # print('notice_flg: ' + str(notice_flg))
                         return all_data, line_msg_favorite_list, notice_flg
 
 
@@ -165,20 +174,25 @@ def create_file_name():
     return file_name
 
 
-def convert_to_dataframe_and_csv(all_data):
+def convert_to_csv(all_data):
 
     # convert to dataframe
     df = pd.DataFrame(all_data)
+    print("df.empty")
     df.drop_duplicates(subset=['名称','家賃'], inplace=True) #delete duplication
-    df.reset_index(drop=True, inplace=True) #fix index
+    df.index = np.arange(1, len(df)+1) #fix index from 1
 
     # convert to csv
     file_name =create_file_name()
     print ("CSV file name:" + file_name)
     df.to_csv(CSV_FOLDER_PATH + file_name, encoding='shift jis')
 
+    df['名称'] = df['名称'].str[:6] + '...'
+    rent_info_line_msg = df.loc[:, ['名称', '家賃', '管理費', '面積']]
+    rent_info_line_msg = str(rent_info_line_msg)
+
     print("* create csv file done *")
-    return file_name
+    return file_name, rent_info_line_msg
 
 
 """
@@ -191,45 +205,51 @@ credentials = ServiceAccountCredentials.from_json_keyfile_name(ACCOUNT_KEY_PATH,
 SPREADSHEET_KEY = SPREADSHEET_KEY
 
 def update_spreadsheet(file_name):
-  print("* update spreadshhet start *")
-  #Google APIにログイン
-  gc = gspread.authorize(credentials)
+    print("* update spreadshhet start *")
+    #Google APIにログイン
+    gc = gspread.authorize(credentials)
 
-  # CSVファイル読み込み
-  csv_file_name = CSV_FOLDER_PATH + file_name
+    # CSVファイル読み込み
+    csv_file_name = CSV_FOLDER_PATH + file_name
 
-  #共有設定したスプレッドシートのシート1を開く
-  worksheet = gc.open_by_key(SPREADSHEET_KEY).sheet1
+    #共有設定したスプレッドシートのシート1を開く
+    worksheet = gc.open_by_key(SPREADSHEET_KEY).sheet1
 
-  # スプレッドシートの中身を空にする
-  worksheet.clear()
+    # スプレッドシートの中身を空にする
+    worksheet.clear()
 
-  # CSVを書き込み
-  worksheet.update(list(csv.reader(open(csv_file_name, encoding='shift jis'))))
+    # CSVを書き込み
+    worksheet.update(list(csv.reader(open(csv_file_name, encoding='shift jis'))))
 
-  print("* update spreadshhet done *")
+    print("* update spreadshhet done *")
 
 
 """
 スプレッドシートが更新されたことをLINEに通知する
 """
 
-def Notify(notice_flg, line_msg_favorite_list):
+def Notify(notice_flg, rent_info_line_msg, line_msg_favorite_list):
     print("* send LINE start *")
     folder_path = GDRIVE_FOLDER_PATH
+    s = SEARCH_URL
+    search_url = s.replace('&page={}', '')
 
     if notice_flg == 1:
         if line_msg_favorite_list:
             favorite_list = '\n'.join(line_msg_favorite_list)
 
-            print('送信先：グループ')
-            send_line_msg ='\n 新着の物件情報があります!\n' + folder_path + '\n\nーー以下のお気に入り物件に空室がありますーー\n' + favorite_list
+            print('送信先：グループ（お気に入りあり）')
+            send_line_msg ='\n新着情報があります😙🎶\n \n 🗼物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path + '\n \nお気に入り物件に空室があります😆\n' + favorite_list
         else:
-            print('送信先：グループ')
-            send_line_msg ='\n 新着の物件情報があります!\n' + folder_path
+            print('送信先：グループ（お気に入りなし）')
+            send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path
+    elif notice_flg == 2:
+            print('送信先：個人（該当物件なし）')
+            send_line_msg ='\n 😞本日の該当物件はありません\n' + '\n \n🛋検索条件URL(九段下駅徒歩10分以内)：\n' + search_url
     else:
         print('送信先：個人')
-        send_line_msg ='\n 本日の物件情報\n' + folder_path
+        send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path + '\n \n🛋検索条件URL(九段下駅徒歩10分以内)：\n' + search_url
+
 
     send_line_notify(notice_flg, send_line_msg)
     print('----------notification_message----------')
@@ -251,23 +271,35 @@ def send_line_notify(notice_flg, notification_message):
 
     line_notify_api = LINE_API
     headers = {'Authorization': f'Bearer {line_notify_token}'}
-    data = {'message': f'message: {notification_message}'}
+    data = {'message': notification_message}
     requests.post(line_notify_api, headers = headers, data = data)
 
 
 def main():
-  print("****** START ******")
+    print("****** START ******")
 
-  result = create_csv_file()
-  csv_file_name = result[0]
-  line_msg_favorite_list = result[1]
-  notice_flg = result[2]
+    # データ取得
+    result1 = create_data_list()
+    all_data = result1[0]
+    line_msg_favorite_list = result1[1]
+    notice_flg = result1[2]
 
-  update_spreadsheet(csv_file_name)
+    #データ有無確認
+    df = pd.DataFrame(all_data)
+    isEmpty = df.empty
 
-  Notify(notice_flg, line_msg_favorite_list)
+    if not isEmpty:
+        #CSV変換
+        result2 = convert_to_csv(all_data)
+        file_name = result2[0]
+        rent_info_line_msg = result2[1]
 
-  print("****** DONE ******")
+        update_spreadsheet(file_name)
+        Notify(notice_flg, rent_info_line_msg, line_msg_favorite_list)
+    else:
+        Notify(notice_flg=2, rent_info_line_msg="", line_msg_favorite_list="")
+
+    print("****** DONE ******")
 
 
 # 実行
