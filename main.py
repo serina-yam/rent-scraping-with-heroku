@@ -23,11 +23,13 @@ LINE_API = os.environ["LINE_API"]
 # GOOGLE
 SPREADSHEET_KEY = os.environ["SPREADSHEET_KEY"]
 GDRIVE_FOLDER_PATH = os.environ["GDRIVE_FOLDER_PATH"]
+SPREADSHEET_FILE_PATH = os.environ["SPREADSHEET_FILE_PATH"]
 ACCOUNT_KEY_PATH = os.environ["ACCOUNT_KEY_PATH"]
 
 # 検索条件適用URL
 SEARCH_URL = os.environ["SEARCH_URL"]
-SEARCH_WORD = os.environ["SEARCH_WORD"]
+SEARCH_WORD1 = os.environ["SEARCH_WORD1"]
+SEARCH_WORD2 = os.environ["SEARCH_WORD2"]
 FAVORITE_LIST = os.environ["FAVORITE_LIST"].split(',')
 DROP_LIST = os.environ["DROP_LIST"].split(',')
 
@@ -82,6 +84,8 @@ def scraping():
         # extract all items
         items = soup.findAll("div", {"class": "cassetteitem"})
         print("data : page", page, "items", len(items))
+        print("DROP_LIST:")
+        print(DROP_LIST)
 
         # process each item
         for item in items:
@@ -89,8 +93,9 @@ def scraping():
 
             address = item.find("li", {"class": "cassetteitem_detail-col1"}).getText().strip()
             # アドレスにSEARCH_WORDが含まれるデータのみ格納
-            search_word = SEARCH_WORD
-            if search_word in address:
+            search_word1 = SEARCH_WORD1
+            search_word2 = SEARCH_WORD2
+            if search_word1 in address or search_word2 in address:
                 # process each station
                 for station in stations:
                     # define variable
@@ -130,27 +135,30 @@ def scraping():
 
                         # 除外する物件はデータに入れない
                         if not rent_name in DROP_LIST:
-                            print("DROP_LIST:")
-                            print(DROP_LIST)
                             all_data.append(data)
 
                         # お気に入り物件はLINEにメッセージ
                         if rent_name in FAVORITE_LIST:
                             line_msg_favorite_list.append(rent_name + "\n")
 
-                        # 前回作られたデータ取得
-                        worksheet = open_spreadsheet()
-                        df = pd.DataFrame(worksheet.get_all_values())
+    notice_flg = 0
+    line_msg_favorite_list = set(line_msg_favorite_list)
+    print('notice_flg: ' + str(notice_flg))
+    return all_data, line_msg_favorite_list, notice_flg
 
-                        # 昨日の物件名称と一致する場合は個人、しない場合はグループ通知
-                        exists = rent_name in df.values
-                        if exists:
-                            notice_flg = 0 #個人
-                        else:
-                            notice_flg = 1 #グループ
 
-                        print('notice_flg: ' + str(notice_flg))
-                        return all_data, line_msg_favorite_list, notice_flg
+"""
+    # 前回作られたデータ取得
+    worksheet = open_spreadsheet()
+    df = pd.DataFrame(worksheet.get_all_values())
+
+    # 昨日の物件名称と一致する場合は個人、しない場合はグループ通知
+    exists = rent_name in df.values
+    if exists:
+        notice_flg = 0 #個人
+    else:
+    notice_flg = 1 #グループ
+"""
 
 
 def convert_to_dataframe(all_data):
@@ -158,6 +166,7 @@ def convert_to_dataframe(all_data):
     # convert to dataframe
     df = pd.DataFrame(all_data)
     df.drop_duplicates(subset=['名称','家賃'], inplace=True) #delete duplication
+    df = df.sort_values(by='面積', ascending=False)
     df.index = np.arange(1, len(df)+1) #fix index from 1
 
     print("* create csv file done *")
@@ -200,25 +209,25 @@ def update_spreadsheet(df):
 
 def Notify(notice_flg, rent_info_line_msg, line_msg_favorite_list):
     print("* send LINE start *")
-    folder_path = GDRIVE_FOLDER_PATH
+    file_path = SPREADSHEET_FILE_PATH
     s = SEARCH_URL
     search_url = s.replace('&page={}', '')
+    favorite_list = '\n'.join(line_msg_favorite_list)
 
     if notice_flg == 1:
         if line_msg_favorite_list:
-            favorite_list = '\n'.join(line_msg_favorite_list)
 
             print('送信先：グループ（お気に入りあり）')
-            send_line_msg ='\n新着情報があります😙🎶\n \n 🗼物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path + '\n \nお気に入り物件に空室があります😆\n' + favorite_list
+            send_line_msg ='\n新着情報があります😙🎶\n \n 🗼物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + file_path + '\n \nお気に入り物件に空室があります😆\n' + favorite_list
         else:
             print('送信先：グループ（お気に入りなし）')
-            send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path
+            send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + file_path
     elif notice_flg == 2:
             print('送信先：個人（該当物件なし）')
-            send_line_msg ='\n 😞本日の該当物件はありません\n' + '\n \n🛋検索条件URL：\n' + search_url
+            send_line_msg ='\n 😞本日の該当物件はありません\n' + '\n \n🛋検索条件URL：\n' + search_url + '\n \nお気に入り物件があれば下に物件名が表示されます😆\n' + favorite_list
     else:
         print('送信先：個人')
-        send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + folder_path + '\n \n🛋検索条件URL：\n' + search_url
+        send_line_msg ='\n 🗼本日の物件情報\n' + rent_info_line_msg + '\n \n🕯詳細情報リンク:\n' + file_path + '\n \n🛋検索条件URL：\n' + search_url + '\n \nお気に入り物件があれば下に物件名が表示されます😆\n' + favorite_list
 
 
     send_line_notify(notice_flg, send_line_msg)
@@ -264,8 +273,10 @@ def main():
         update_spreadsheet(df)
 
         df['名称'] = df['名称'].str[:6] + '...'
-        rent_info_line_msg = df.loc[:, ['名称', '家賃', '管理費', '面積']]
-        rent_info_line_msg = str(rent_info_line_msg)
+        df = df.loc[:, ['名称', '家賃', '管理費', '面積']]
+        df = df.sort_values(by='面積', ascending=False).head(5)
+        df.index = np.arange(1, len(df)+1) #fix index from 1
+        rent_info_line_msg = str(df)
 
         Notify(notice_flg, rent_info_line_msg, line_msg_favorite_list)
     else:
