@@ -1,1 +1,16 @@
-# rent-scraping-with-heroku
+# 物件情報スクレイイングツール
+
+## なぜ作ったか？
+
+引越しをする際の情報収集のために作成しました。<br>
+物件を探すのは意外と手間がかかり、サイトでは本当に欲しいものだけを集めるのがむずかしいと感じていました。
+
+
+## どう作ったか？
+
+herokuで自動起動を行い、googleドライブにあるファイルを更新。<br>
+更新通知をslackで送信する機能を作成しました。
+
+自動実行： Heroku<br>
+スクレイピング: PythonのBeautiful Soup<br>
+API: google API, slack API
